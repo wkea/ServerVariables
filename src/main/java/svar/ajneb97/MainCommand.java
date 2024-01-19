@@ -39,6 +39,8 @@ public class MainCommand implements CommandExecutor, TabCompleter {
 				get(sender,args,config,msgManager);
 			}else if(args[0].equalsIgnoreCase("add")){
 				add(sender,args,config,msgManager);
+			}else if(args[0].equalsIgnoreCase("take")){
+				take(sender,args,config,msgManager);
 			}else if(args[0].equalsIgnoreCase("reduce")){
 				reduce(sender,args,config,msgManager);
 			}else if(args[0].equalsIgnoreCase("reset")){
@@ -55,19 +57,19 @@ public class MainCommand implements CommandExecutor, TabCompleter {
 	}
 
 	public void help(CommandSender sender, String[] args, FileConfiguration config, MessagesManager msgManager){
-		sender.sendMessage(MessagesManager.getColoredMessage("&7[ [ &8[&aServerVariables&8] &7] ]"));
+		sender.sendMessage(MessagesManager.getColoredMessage("&7[ [ &8[&服务器变量&8] &7] ]"));
 		sender.sendMessage(MessagesManager.getColoredMessage(" "));
-		sender.sendMessage(MessagesManager.getColoredMessage("&6/svar help &8Shows this message."));
-		sender.sendMessage(MessagesManager.getColoredMessage("&6/svar set <variable> <value> (optional)<player> (optional)silent:true &8Sets the value of a variable."));
-		sender.sendMessage(MessagesManager.getColoredMessage("&6/svar get <variable> (optional)<player> (optional)silent:true &8Gets the value from a variable."));
-		sender.sendMessage(MessagesManager.getColoredMessage("&6/svar add <variable> <value> (optional)<player> (optional)silent:true &8Adds a value to a variable (INTEGER or DOUBLE)."));
-		sender.sendMessage(MessagesManager.getColoredMessage("&6/svar reduce <variable> <value> (optional)<player> (optional)silent:true &8Reduces the value of a variable (INTEGER or DOUBLE)."));
-		sender.sendMessage(MessagesManager.getColoredMessage("&6/svar reset <variable> <value> (optional)<player> (optional)silent:true &8Resets the value of a variable."));
-		sender.sendMessage(MessagesManager.getColoredMessage("&6/svar reload &8Reloads the config."));
+		sender.sendMessage(MessagesManager.getColoredMessage("&6/svar help &8显示此消息。"));
+		sender.sendMessage(MessagesManager.getColoredMessage("&6/svar set <变量名> <值> (可选)<玩家名> (可选)silent:true &8设置变量的值。"));
+		sender.sendMessage(MessagesManager.getColoredMessage("&6/svar get <变量名> (可选)<玩家名> (可选)silent:true &8获取变量的值。"));
+		sender.sendMessage(MessagesManager.getColoredMessage("&6/svar add <变量名> <值> (可选)<玩家名> (可选)silent:true &8给变量添加一个值（整数或双精度浮点数）。"));
+		sender.sendMessage(MessagesManager.getColoredMessage("&6/svar reduce <变量名> <值> (可选)<玩家名> (可选)silent:true &8减少变量的值（整数或双精度浮点数）。"));
+		sender.sendMessage(MessagesManager.getColoredMessage("&6/svar reset <变量名> <值> (可选)<玩家名> (可选)silent:true &8重置变量的值。"));
+		sender.sendMessage(MessagesManager.getColoredMessage("&6/svar reload &8重新加载配置。"));
 		sender.sendMessage(MessagesManager.getColoredMessage(" "));
-		sender.sendMessage(MessagesManager.getColoredMessage("&7[ [ &8[&aServerVariables&8] &7] ]"));
-
+		sender.sendMessage(MessagesManager.getColoredMessage("&7[ [ &8[&服务器变量&8] &7] ]"));
 	}
+
 
 	public void set(CommandSender sender, String[] args, FileConfiguration config, MessagesManager msgManager){
 		//servervariables set <variable> <value> (Set global variable)
@@ -125,6 +127,52 @@ public class MainCommand implements CommandExecutor, TabCompleter {
 			}
 		}
 	}
+	public void take(CommandSender sender, String[] args, FileConfiguration config, MessagesManager msgManager){
+		// servervariables take <variable> <value> (Subtract value from server variable if INTEGER or DOUBLE)
+		// servervariables take <variable> <value> <player> (Subtract value from player variable if INTEGER or DOUBLE)
+		if(args.length <= 2){
+			msgManager.sendMessage(sender,config.getString("messages.commandAddError").replace("add","take"), true);
+			return;
+		}
+
+		String variableName = args[1];
+		String valueStr = args[2];
+		String playerName = null;
+		VariableResult currentVarResult = null;
+
+		if(args.length >= 4 && !args[3].equals("silent:true")){
+			playerName = args[3];
+			currentVarResult = plugin.getPlayerVariablesManager().getVariableValue(playerName, variableName, false);
+		}else{
+			currentVarResult = plugin.getServerVariablesManager().getVariableValue(variableName, false);
+		}
+
+		if(currentVarResult.isError()){
+			msgManager.sendMessage(sender, currentVarResult.getErrorMessage(), true);
+			return;
+		}
+
+		int currentValue = Integer.parseInt(currentVarResult.getResultValue());
+		int valueToSubtract = Integer.parseInt(valueStr);
+		int newValue = Math.max(0, currentValue - valueToSubtract);
+		// 如果newValue与currentValue相同，无需更新
+		if (newValue == currentValue) {
+			// 可以选择在这里发送消息给 sender，告知他们变量值没有改变
+			return;
+		}
+		// 进行变量更新
+		VariableResult result;
+		if(playerName != null){
+			playerName = args[3];
+			result = plugin.getPlayerVariablesManager().setVariable(playerName,variableName, String.valueOf(newValue));
+		}else{
+			result = plugin.getServerVariablesManager().setVariable(variableName, String.valueOf(newValue));
+		}
+
+		boolean silent = args[args.length - 1].equals("silent:true");
+		sendMessageSet(sender, result, msgManager, config, variableName, playerName, silent);
+	}
+
 
 	public void add(CommandSender sender, String[] args, FileConfiguration config, MessagesManager msgManager){
 		//servervariables add <variable> <value> (Add value to server variable if INTEGER or DOUBLE)
@@ -244,23 +292,24 @@ public class MainCommand implements CommandExecutor, TabCompleter {
 		}
 
 		if(args.length == 1){
-			//Show all commands
+			// 显示所有命令
 			List<String> completions = new ArrayList<String>();
 			List<String> commands = new ArrayList<String>();
-			commands.add("reload");commands.add("set");commands.add("get");commands.add("add");commands.add("reduce");
-			commands.add("reset");commands.add("help");
+			commands.add("reload"); commands.add("set"); commands.add("get"); commands.add("add"); commands.add("take");
+			commands.add("reduce"); commands.add("reset"); commands.add("help");
 			for(String c : commands) {
 				if(args[0].isEmpty() || c.startsWith(args[0].toLowerCase())) {
 					completions.add(c);
 				}
 			}
 			return completions;
-		}else{
+		} else {
 			List<String> completions = new ArrayList<String>();
 			ArrayList<Variable> variables = plugin.getVariablesManager().getVariables();
 			if((args[0].equalsIgnoreCase("set") || args[0].equalsIgnoreCase("get") || args[0].equalsIgnoreCase("add")
-					|| args[0].equalsIgnoreCase("reduce") || args[0].equalsIgnoreCase("reset"))
+					|| args[0].equalsIgnoreCase("take") || args[0].equalsIgnoreCase("reduce") || args[0].equalsIgnoreCase("reset"))
 					&& args.length == 2) {
+				// 对于 set, get, add, take, reduce, reset 命令的变量名补全
 				String argVariable = args[1];
 				for(Variable variable : variables) {
 					if(argVariable.isEmpty() || variable.getName().toLowerCase().startsWith(argVariable.toLowerCase())) {
@@ -268,7 +317,8 @@ public class MainCommand implements CommandExecutor, TabCompleter {
 					}
 				}
 				return completions;
-			}else if(args[0].equalsIgnoreCase("set") && args.length == 3){
+			} else if(args[0].equalsIgnoreCase("set") && args.length == 3){
+				// set 命令的值补全
 				Variable variable = plugin.getVariablesManager().getVariable(args[1]);
 				String argVariable = args[2];
 
@@ -282,11 +332,13 @@ public class MainCommand implements CommandExecutor, TabCompleter {
 				}
 				completions.add("<value>");
 				return completions;
-			}else if((args[0].equalsIgnoreCase("add") || args[0].equalsIgnoreCase("reduce")) && args.length == 3){
+			} else if((args[0].equalsIgnoreCase("add") || args[0].equalsIgnoreCase("reduce") || args[0].equalsIgnoreCase("take")) && args.length == 3){
+				// add, reduce, take 命令的值补全
 				completions.add("<value>");
 				return completions;
 			}
 		}
 		return null;
 	}
+
 }
